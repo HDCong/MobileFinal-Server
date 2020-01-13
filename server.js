@@ -16,7 +16,9 @@ server.listen(process.env.PORT || 8515);
 io.on('connection', function (socket) {
     console.log('a user connected');
     console.log(socket.id)
+
     socket.on('getRoomID', function () {
+        console.log('20 : vao get room id')
         var query1 = 'SELECT RO.roomID FROM RoomOnline RO WHERE RO.isWaiting = 1'
         var query2 = ' HAVING (SELECT COUNT(*) FROM clientInRoom CL WHERE CL.roomID = RO.roomID) < 4 ORDER BY RO.roomID ASC'
         db.query(query1 + query2, (err, result) => {
@@ -27,12 +29,13 @@ io.on('connection', function (socket) {
             else {
                 console.log(result)
                 socket.emit('RoomID', { roomid: result });
-                console.log((result[0].roomID.toString()))
                 // socket.join(result[0].roomID.toString())
             }
         })
     })
+
     socket.on('joinRoom', (objectRoom) => {
+        console.log('37 : vao join room id')
         console.log(objectRoom)
         db.query('SELECT COUNT(*) as c FROM clientInRoom cl WHERE cl.roomID = ?', [objectRoom.roomID], (error, results) => {
             if (error) {
@@ -53,7 +56,16 @@ io.on('connection', function (socket) {
                         else {
                             console.log(results)
                             if (results.affectedRows == 1) {
+                                io.to(socket.id).emit('joinedRoom', { ok: 'OK' });
                                 socket.join(objectRoom.roomID)
+                                db.query('SELECT cl.clientName FROM clientInRoom cl WHERE cl.roomID = ?', [objectRoom.roomID], (err, results2) => {
+                                    if (err) throw err;
+                                    else {
+                                        console.log(results2)
+                                        console.log(objectRoom.roomID)
+                                        io.to(objectRoom.roomID).emit('listPlayer', { list: results2 })
+                                    }
+                                })
                             }
                         }
                     })
@@ -79,12 +91,14 @@ io.on('connection', function (socket) {
                     console.log(socket.id)
                     console.log(results.insertId)
                     var query1 = 'INSERT INTO clientInRoom(clientName, roomID) values ('
-                    var query2 = '\''+clientName +'\'' +',' + results.insertId+')'
-                    db.query(query1 + query2,(err,results)=>{
-                        if(err){
+                    var query2 = '\'' + clientName + '\'' + ',' + results.insertId + ')'
+                    console.log(query1 + query2)
+                    db.query(query1 + query2, (err, result) => {
+                        if (err) {
                             throw err
                         }
-                        else{
+                        else {
+                            socket.join(results.insertId)
                             io.to(socket.id).emit('CreatedRoom', { roomid: results.insertId });
                         }
                     })
@@ -93,6 +107,8 @@ io.on('connection', function (socket) {
         })
     })
     socket.on('chat', (objectChat) => {
+        console.log('134 : vao chat recei ')
+
         console.log(objectChat.roomID)
         console.log(objectChat.user)
         console.log(objectChat.Message)
@@ -102,40 +118,41 @@ io.on('connection', function (socket) {
     })
     socket.on('start-game', (roomID) => {
         console.log('Start game')
-        db.query('SELECT * FROM Question qt ORDER BY RAND() LIMIT 1', (err, results) => {
+        db.query('SELECT * FROM Question qt ORDER BY RAND() LIMIT 1', (err, result) => {
             if (err) {
-                // console.log(err)
                 throw err
-
             }
             else {
-                console.log(results)
-                socket.to(roomID).emit('Question', { status: 1, quest: results[0].urlPicture, ans: results[0].solution })
+                console.log(result)
                 db.query('UPDATE RoomOnline ro SET isWaiting = 0 WHERE ro.roomID=?', [roomID], (err, results) => {
                     if (err) {
-                        // console.log(err)
                         throw err
                     }
                     else {
                         console.log(results)
-                        socket.to(roomID).emit('question', { question: results[0].urlPicture, sol: results[0].solution });
+                        io.to(roomID).emit('question', { url: result[0].urlPicture, sol: result[0].solution});
                     }
                 })
             }
         })
     })
-    socket.on('receive', (objectPoint) => {
-        // object point : room id, username, point plus
-        socket.to(objectPoint.roomID).emit('updatePoint', { user: objectPoint.username, point: objectPoint.point })
 
+    socket.on('receive', (objectPoint) => {
+        console.log('134 : vao get recei ')
+
+        // object point : room id, username, point plusc
+        console.log( objectPoint.username)
+        console.log( objectPoint.point)
+        socket.to(objectPoint.roomID).emit('updatePoint', { user: objectPoint.username, point: objectPoint.point })
+        
     })
+
     socket.on('getQuestion', () => {
         console.log('get question nek')
         db.query('SELECT * FROM Question qt ORDER BY RAND() LIMIT 1', (err, results) => {
             if (err) {
                 throw err
                 console.log(err)
-
             }
             else {
                 console.log(results[0])
@@ -143,6 +160,21 @@ io.on('connection', function (socket) {
             }
         })
     })
+
+    socket.on('updateList', (roomid,str) => {
+        console.log(' vao update list')
+        console.log(str)
+        console.log(socket.id)
+
+        db.query('SELECT cl.clientName FROM clientInRoom cl WHERE cl.roomID = ?', [roomid], (err, results2) => {
+            if (err) throw err;
+            else {
+                console.log(results2)
+                io.to(socket.id).emit('listPlayer', { list: results2 })
+            }
+        })
+    })
+
     socket.on('disconnect', function (socket) {
         console.log('a user disconnected')
     })
